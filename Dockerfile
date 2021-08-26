@@ -19,6 +19,7 @@ RUN groupadd -r saleor && useradd -r -g saleor saleor
 
 RUN apt-get update \
   && apt-get install -y \
+  nginx \
   libxml2 \
   libssl1.1 \
   libcairo2 \
@@ -30,9 +31,18 @@ RUN apt-get update \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /app/media /app/static \
-  && chown -R saleor:saleor /app/
+# Copiando arquivos do nginx
+COPY ./nginx/nginx.conf /etc/nginx/nginx.conf
+COPY ./nginx/server.conf /etc/nginx/sites-available/default
+RUN ln -sf /dev/stdout /var/log/nginx/access.log && ln -sf /dev/stderr /var/log/nginx/error.log
 
+# Criando pastas e liberando acessos do usuario saleor
+RUN mkdir -p /app/media /app/static /run \
+  && chown -R saleor:saleor /var/lib/nginx /var/www /app \
+  && touch /run/nginx.pid \
+  && chown saleor:saleor /run/nginx.pid
+
+# Copiando arquivos do build Python
 COPY --from=build-python /usr/local/lib/python3.8/site-packages/ /usr/local/lib/python3.8/site-packages/
 COPY --from=build-python /usr/local/bin/ /usr/local/bin/
 COPY . /app
@@ -42,21 +52,12 @@ ARG STATIC_URL
 ENV STATIC_URL ${STATIC_URL:-/static/}
 RUN SECRET_KEY=dummy STATIC_URL=${STATIC_URL} python3 manage.py collectstatic --no-input
 
+# Copiando arquivo de execução do container
+COPY ./run.sh /opt/
+RUN chmod +x /opt/run.sh
+
 EXPOSE 8000
 ENV PYTHONUNBUFFERED 1
+USER saleor
 
-ARG COMMIT_ID
-ARG VERSION
-
-LABEL org.opencontainers.image.title="mirumee/saleor"                                  \
-      org.opencontainers.image.description="\
-A modular, high performance, headless e-commerce platform built with Python, \
-GraphQL, Django, and ReactJS."                                                         \
-      org.opencontainers.image.url="https://saleor.io/"                                \
-      org.opencontainers.image.source="https://github.com/mirumee/saleor"              \
-      org.opencontainers.image.revision=$COMMIT_ID                                     \
-      org.opencontainers.image.version=$VERSION                                        \
-      org.opencontainers.image.authors="Mirumee Software (https://mirumee.com)"        \
-      org.opencontainers.image.licenses="BSD 3"
-
-CMD ["gunicorn", "--bind", ":8000", "--workers", "4", "--worker-class", "uvicorn.workers.UvicornWorker", "saleor.asgi:application"]
+CMD ["/opt/run.sh"]
