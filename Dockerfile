@@ -58,6 +58,5 @@ RUN chmod +x /opt/run.sh
 
 EXPOSE 8000
 ENV PYTHONUNBUFFERED 1
-USER saleor
 
 CMD ["/opt/run.sh"]
